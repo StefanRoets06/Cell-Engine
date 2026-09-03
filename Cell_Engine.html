@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cellular Automata Engine</title>
+<style>
+  :root{
+    --bg: #0d1117;
+    --panel: #12171f;
+    --panel-line: #232b36;
+    --ink: #d8dee9;
+    --ink-dim: #7c8698;
+    --grid-line: #1a2029;
+    --signal: #e0a836;
+    --signal-dim: #7a5c22;
+    --cell-off: #0a0e14;
+    --danger: #c96a5a;
+    --ok: #7fbf6a;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+  }
+
+  body {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-attachment: fixed;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    height: 100vh;
+    min-height: 640px;
+  }
+
+  /* ---------- Header ---------- */
+  .brand {
+    padding: 22px 22px 18px;
+    border-bottom: 1px solid var(--panel-line);
+    background: var(--panel);
+  }
+  .brand h1 {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .brand h1 span { color: var(--signal); }
+  .brand p {
+    margin: 6px 0 0;
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--panel-line);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-scroll {
+    overflow-y: auto;
+    flex: 1;
+    padding-bottom: 24px;
+  }
+  .sidebar-scroll::-webkit-scrollbar { width: 8px; }
+  .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--panel-line); border-radius: 4px; }
+
+  section.block {
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  section.block h2 {
+    margin: 0 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--signal);
+    font-family: var(--mono);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .row label {
+    font-size: 12.5px;
+    color: var(--ink-dim);
+  }
+  .row:last-child { margin-bottom: 0; }
+
+  input[type="number"], select {
+    background: var(--bg);
+    border: 1px solid var(--panel-line);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    width: 84px;
+  }
+  select { width: auto; max-width: 150px; }
+  input[type="number"]:focus, select:focus { outline: 1px solid var(--signal); border-color: var(--signal); }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 3px;
+    background: var(--panel-line);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--signal);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+  }
+
+  input[type="checkbox"] {
+    width: 15px; height: 15px;
+    accent-color: var(--signal);
+    cursor: pointer;
+  }
+
+  .toggle-row { display:flex; align-items:center; gap:8px; }
+
+  button {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--panel-line);
+    background: var(--bg);
+    color: var(--ink);
+    cursor: pointer;
+    transition: border-color .12s ease, color .12s ease;
+  }
+  button:hover { border-color: var(--signal-dim); color: var(--signal); }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: var(--signal);
+    border-color: var(--signal);
+    color: #1a1305;
+  }
+  button.primary:hover { color: #1a1305; border-color: var(--signal); filter: brightness(1.08); }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  button.full { width: 100%; }
+  button.small { padding: 5px 9px; font-size: 11.5px; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .btn-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+
+  /* ---------- State editor ---------- */
+  .state-card {
+    border: 1px solid var(--panel-line);
+    border-radius: 5px;
+    padding: 10px 10px 12px;
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.012);
+  }
+  .state-card:last-child { margin-bottom: 0; }
+  .state-card.selected-brush { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal) inset; }
+
+  .state-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 9px;
+  }
+  .swatch {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .state-head input[type="text"] {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 3px 2px;
+    min-width: 0;
+  }
+  .state-head input[type="text"]:focus { outline: none; border-bottom: 1px solid var(--signal); }
+  .state-id-badge {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    background: var(--bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    flex-shrink: 0;
+  }
+  .paint-btn {
+    font-size: 10px;
+    padding: 3px 7px;
+    flex-shrink: 0;
+  }
+
+  .rule-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .rule-line > span {
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    width: 44px;
+    flex-shrink: 0;
+    font-family: var(--mono);
+  }
+  .count-boxes {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+  }
+  .count-box {
+    width: 20px; height: 20px;
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--ink-dim);
+    background: var(--bg);
+    user-select: none;
+  }
+  .count-box.on {
+    background: var(--signal);
+    border-color: var(--signal);
+    color: #1a1305;
+    font-weight: 700;
+  }
+  .decay-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .decay-row span {
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+  }
+  .decay-row select { font-size: 11px; padding: 3px 6px; width: auto; }
+
+  .spark-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 9px;
+    padding-top: 9px;
+    border-top: 1px dashed var(--panel-line);
+  }
+  .spark-row span {
+    font-size: 10px;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    flex-shrink: 0;
+  }
+  canvas.spark { flex: 1; height: 24px; display: block; }
+
+  .hint {
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.6;
+    margin-top: 2px;
+  }
+
+  .notation-box {
+    margin-top: 12px;
+    padding: 10px 11px;
+    border: 1px solid var(--panel-line);
+    border-radius: 5px;
+    background: var(--bg);
+  }
+  .notation-box h3 {
+    margin: 0 0 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    text-transform: uppercase;
+  }
+  .notation-code {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--signal);
+    word-break: break-word;
+    line-height: 1.5;
+  }
+  .notation-code .dim { color: var(--ink-dim); }
+
+  .file-input { display: none; }
+
+  /* ---------- Main / canvas ---------- */
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--panel-line);
+    background: var(--panel);
+    flex-wrap: wrap;
+  }
+  .toolbar .spacer { flex: 1; }
+  .stat {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
+  .stat b { color: var(--signal); font-weight: 600; }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 20px;
+    border: 1px solid var(--panel-line);
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+  .badge.show { display: inline-flex; }
+  .badge .pip { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+  .badge.stable { color: var(--ok); border-color: rgba(127,191,106,0.35); background: rgba(127,191,106,0.08); }
+  .badge.oscillating { color: var(--signal); border-color: rgba(224,168,54,0.35); background: rgba(224,168,54,0.08); }
+  .badge.oscillating .pip { background: var(--signal); }
+
+  .icon-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+  }
+
+  .canvas-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    padding: 24px;
+    position: relative;
+  }
+  #board {
+    background: var(--cell-off);
+    border: 1px solid var(--panel-line);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 20px 60px -20px rgba(0,0,0,0.6);
+    image-rendering: pixelated;
+    cursor: crosshair;
+  }
+
+  .brush-indicator {
+    position: absolute;
+    bottom: 34px;
+    left: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    padding: 7px 12px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-family: var(--mono);
+    color: var(--ink-dim);
+    pointer-events: none;
+  }
+  .brush-indicator .dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); }
+
+  /* ---------- Stats / chart panel ---------- */
+  .chart-panel {
+    background: var(--panel);
+    border-bottom: 1px solid var(--panel-line);
+    padding: 12px 22px 14px;
+  }
+  .chart-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .chart-head h3 {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--signal);
+    font-family: var(--mono);
+    flex: 1;
+  }
+  .chart-head .stat { font-size: 11px; }
+  .chart-toggle {
+    background: none;
+    border: none;
+    color: var(--ink-dim);
+    font-size: 11px;
+    padding: 2px 4px;
+  }
+  .chart-toggle:hover { border: none; color: var(--signal); }
+  #chartCanvas {
+    display: block;
+    width: 100%;
+    height: 120px;
+  }
+  .legend-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0;
+  }
+  .legend-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 20px;
+    padding: 4px 10px 4px 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+  .legend-chip .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .legend-chip b { color: var(--ink); font-weight: 600; }
+  .legend-chip .pct { color: var(--ink-dim); }
+
+  .entropy-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-top: 1px solid var(--panel-line);
+    padding-top: 10px;
+  }
+  .entropy-row h4 {
+    margin: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    width: 128px;
+    flex-shrink: 0;
+  }
+  #entropyCanvas { flex: 1; height: 34px; display: block; }
+  .entropy-val { font-family: var(--mono); font-size: 11px; color: var(--signal); width: 90px; text-align: right; flex-shrink: 0; }
+
+  .chart-panel.collapsed #chartCanvas,
+  .chart-panel.collapsed .legend-strip,
+  .chart-panel.collapsed .entropy-row { display: none; }
+
+  /* ---------- Presentation / fullscreen mode ---------- */
+  .mini-bar {
+    display: none;
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    gap: 8px;
+    z-index: 50;
+    background: rgba(18,23,31,0.9);
+    border: 1px solid var(--panel-line);
+    padding: 8px;
+    border-radius: 8px;
+    backdrop-filter: blur(6px);
+  }
+  body.presentation .sidebar,
+  body.presentation .toolbar,
+  body.presentation .chart-panel,
+  body.presentation .brush-indicator { display: none !important; }
+  body.presentation .app { grid-template-columns: 1fr; }
+  body.presentation .canvas-wrap { padding: 0; }
+  body.presentation .mini-bar { display: flex; }
+
+  ::selection { background: var(--signal-dim); }
+
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .sidebar { border-right: none; border-bottom: 1px solid var(--panel-line); max-height: 46vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="brand">
+      <h1>cell<span>_</span>engine</h1>
+      <p>Generalized multi‑state cellular automata. Define states, state-targeted neighbor checks, birth &amp; survival rules, then run.</p>
+    </div>
+
+    <div class="sidebar-scroll">
+
+      <section class="block">
+        <h2>Grid</h2>
+        <div class="row">
+          <label>Columns</label>
+          <input type="number" id="gridW" value="80" min="4" max="220">
+        </div>
+        <div class="row">
+          <label>Rows</label>
+          <input type="number" id="gridH" value="60" min="4" max="220">
+        </div>
+        <div class="row">
+          <label>Cell size (px)</label>
+          <input type="number" id="cellSize" value="9" min="2" max="40">
+        </div>
+        <div class="row">
+          <label>Wrap edges</label>
+          <div class="toggle-row"><input type="checkbox" id="wrapEdges" checked></div>
+        </div>
+        <button class="full small" id="applyGrid" style="margin-top:8px;">Apply grid size</button>
+      </section>
+
+      <section class="block">
+        <h2>Preset rules</h2>
+        <select id="presetSelect" style="width:100%;">
+          <option value="">-- Custom / Select Preset --</option>
+          <option value="life">Conway's Life</option>
+          <option value="highlife">HighLife</option>
+          <option value="seeds">Seeds</option>
+          <option value="brain">Brian's Brain (3‑state)</option>
+          <option value="cyclic4">Cyclic chase (4‑state)</option>
+          <option value="dayandnight">Day &amp; Night</option>
+          <option value="beaver">Beaver</option>
+          <option value="embers">Embers (5‑state)</option>
+          <option value="starwars">Star Wars (4‑state)</option>
+          <option value="wireworld">Wireworld (3‑state)</option>
+        </select>
+        <div class="hint">Loading a preset replaces current states &amp; rules.</div>
+        <button class="full small" id="surpriseBtn" style="margin-top:10px;">🎲 Surprise me</button>
+      </section>
+
+      <section class="block">
+        <h2>States &amp; rules</h2>
+        <div class="row">
+          <label>State count</label>
+          <input type="number" id="stateCount" value="2" min="2" max="10">
+        </div>
+        <div id="stateList" style="margin-top:10px;"></div>
+        <div class="hint">Click numbers to set birth/survival triggers. "check state →" allows a state to specifically count neighbors of another state (e.g., Wireworld Conductors looking for Electron Heads)[cite: 1].</div>
+        <div class="notation-box">
+          <h3>Rule notation</h3>
+          <div class="notation-code" id="ruleNotation">B3/S23</div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2>Mutations</h2>
+        <div class="row">
+          <label>Enable auto‑mutation</label>
+          <div class="toggle-row"><input type="checkbox" id="autoMutate"></div>
+        </div>
+        <div class="row">
+          <label>Mutate every (gens)</label>
+          <input type="number" id="mutateInterval" value="50" min="1" max="5000">
+        </div>
+        <div class="row">
+          <label>Mutation strength</label>
+          <input type="range" id="mutationRate" min="1" max="40" value="8" style="width:130px;">
+        </div>
+        <div class="row"><label></label><span class="stat" id="mutationRateLabel">8%</span></div>
+        <button class="full small" id="mutateNowBtn" style="margin-top:6px;">Mutate rules now</button>
+        <div class="hint" id="mutationStatus">No mutations yet. Each mutation randomly flips birth/survive counts per state.</div>
+      </section>
+
+      <section class="block">
+        <h2>Brush</h2>
+        <div class="hint" style="margin-bottom:8px;">Pick which state to paint by clicking "paint" on a state above, then draw on the grid. Right‑click / hold shift to erase.</div>
+        <div class="btn-grid">
+          <button id="randomizeBtn">Randomize</button>
+          <button id="clearBtn">Clear grid</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <label>Fill density</label>
+          <input type="range" id="density" min="1" max="90" value="35" style="width:140px;">
+        </div>
+      </section>
+
+      <section class="block">
+        <h2>Playback</h2>
+        <div class="btn-grid three">
+          <button class="primary" id="playBtn">▶ Run</button>
+          <button id="stepBtn">Step</button>
+          <button id="resetBtn">Reset</button>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <label>Speed (gen/s)</label>
+          <input type="range" id="speed" min="1" max="60" value="12" style="width:140px;">
+        </div>
+        <div class="row"><label></label><span class="stat" id="speedLabel">12 gen/s</span></div>
+      </section>
+
+      <section class="block">
+        <h2>View &amp; export</h2>
+        <div class="row">
+          <label>Heatmap overlay</label>
+          <div class="toggle-row"><input type="checkbox" id="heatmapToggle"></div>
+        </div>
+        <button class="full small" id="presentBtn" style="margin-top:4px;">⤢ Presentation mode</button>
+
+        <div class="hint" style="margin-top:12px;">Record the live board as a short video.</div>
+        <div class="row" style="margin-top:6px;">
+          <label>Duration (s)</label>
+          <input type="number" id="videoDuration" value="6" min="1" max="60">
+        </div>
+        <button class="full small" id="recordBtn">● Export video (WebM)</button>
+        <div class="hint" id="videoStatus"></div>
+
+        <div class="hint" style="margin-top:12px;">Save or load a rule set as JSON.</div>
+        <div class="btn-grid" style="margin-top:6px;">
+          <button id="exportRulesBtn">Export rules</button>
+          <button id="importRulesBtn">Import rules</button>
+        </div>
+        <input type="file" id="importRulesFile" class="file-input" accept="application/json">
+      </section>
+
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="toolbar">
+      <span class="stat">Generation <b id="genCount">0</b></span>
+      <span class="stat" id="popStat">Population 0</span>
+      <span class="badge" id="stabilityBadge"><span class="pip"></span><span id="stabilityText"></span></span>
+      <div class="spacer"></div>
+      <span class="stat" id="statusLabel">Paused</span>
+    </div>
+    <div class="chart-panel" id="chartPanel">
+      <div class="chart-head">
+        <h3>Population over generations</h3>
+        <span class="stat" id="chartRangeLabel"></span>
+        <button class="chart-toggle" id="chartToggle">hide</button>
+      </div>
+      <canvas id="chartCanvas"></canvas>
+      <div class="legend-strip" id="legendStrip"></div>
+      <div class="entropy-row">
+        <h4>Diversity (entropy)</h4>
+        <canvas id="entropyCanvas"></canvas>
+        <span class="entropy-val" id="entropyVal">0.00 bits</span>
+      </div>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="board"></canvas>
+      <div class="brush-indicator"><span class="dot" id="brushDot"></span><span id="brushLabel">Painting: State 1</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="mini-bar" id="miniBar">
+  <button class="icon-toggle" id="miniPlay">▶</button>
+  <button class="icon-toggle" id="miniStep">Step</button>
+  <button class="icon-toggle" id="miniExit">Exit</button>
+</div>
+
+<script>
+(function(){
+
+  // ---------------- State model ----------------
+  let states = [];
+  let gridW = 80, gridH = 60, cellSize = 9, wrap = true;
+  let grid, nextGrid;
+  let cellAge, nextCellAge;
+  let brushState = 1;
+  let running = false;
+  let genCount = 0;
+  let lastStepTime = 0;
+  let rafId = null;
+  let heatmapMode = false;
+  let presentationMode = false;
+
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+
+  const chartCanvas = document.getElementById('chartCanvas');
+  const chartCtx = chartCanvas.getContext('2d');
+  const entropyCanvas = document.getElementById('entropyCanvas');
+  const entropyCtx = entropyCanvas.getContext('2d');
+  const MAX_HISTORY = 400;
+  let history = { gens: [], series: [], entropy: [] };
+  let chartVisible = true;
+
+  // stability / cycle detection
+  let hashHistory = new Map();
+  let hashOrder = [];
+  const HASH_WINDOW = 150;
+  let stabilityInfo = null;
+
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function deselectPreset(){
+    document.getElementById('presetSelect').value = '';
+  }
+
+  function defaultState(id, color, name){
+    return { 
+      id, 
+      color, 
+      name, 
+      birth: new Set(), 
+      survive: new Set(), 
+      decayTo: 0,
+      checkState: id,
+      targetState: id
+    };
+  }
+
+  function loadPreset(key){
+    if(!key) return;
+    if(key === 'wireworld'){
+      states = [
+        { id: 0, color: '#0a0e14', name: 'Empty' },
+        { 
+          id: 1, 
+          color: '#e0a836', 
+          name: 'Conductor', 
+          birth: new Set(),           
+          survive: new Set([1, 2]),    
+          decayTo: 1, 
+          targetState: 2, 
+          checkState: 2               
+        },
+        { 
+          id: 2, 
+          color: '#5fb0e0', 
+          name: 'Electron Head', 
+          birth: new Set(), 
+          survive: new Set(), 
+          decayTo: 3, 
+          checkState: 2 
+        },
+        { 
+          id: 3, 
+          color: '#c96a5a', 
+          name: 'Electron Tail', 
+          birth: new Set(), 
+          survive: new Set(), 
+          decayTo: 1,                 
+          checkState: 3 
+        }
+      ];
+    } else if(key === 'life'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#e0a836', 'Alive'), { birth:new Set([3]), survive:new Set([2,3]), checkState:1, targetState:1, decayTo:0 })
+      ];
+    } else if(key === 'highlife'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#5fb0e0', 'Alive'), { birth:new Set([3,6]), survive:new Set([2,3]), checkState:1, targetState:1, decayTo:0 })
+      ];
+    } else if(key === 'seeds'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#c96a5a', 'Alive'), { birth:new Set([2]), survive:new Set(), checkState:1, targetState:1, decayTo:0 })
+      ];
+    } else if(key === 'brain'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#eaeaea', 'Alive'), { birth:new Set([2]), survive:new Set(), checkState:1, targetState:1, decayTo:2 }),
+        Object.assign(defaultState(2, '#4a6fa5', 'Dying'), { birth:new Set(), survive:new Set(), checkState:2, targetState:2, decayTo:0 })
+      ];
+    } else if(key === 'cyclic4'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Empty' },
+        Object.assign(defaultState(1, '#e0a836', 'A'), { birth:new Set([1,2,3,4,5,6,7,8]), survive:new Set([1,2,3,4,5,6,7,8]), checkState:2, targetState:1, decayTo:2 }),
+        Object.assign(defaultState(2, '#c96a5a', 'B'), { birth:new Set([1,2,3,4,5,6,7,8]), survive:new Set([1,2,3,4,5,6,7,8]), checkState:3, targetState:2, decayTo:3 }),
+        Object.assign(defaultState(3, '#5fb0e0', 'C'), { birth:new Set([1,2,3,4,5,6,7,8]), survive:new Set([1,2,3,4,5,6,7,8]), checkState:0, targetState:3, decayTo:0 })
+      ];
+    } else if(key === 'dayandnight'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#e0a836', 'Alive'), { birth:new Set([3,6,7,8]), survive:new Set([3,4,6,7,8]), checkState:1, targetState:1, decayTo:0 })
+      ];
+    } else if(key === 'beaver'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#8fbf6a', 'Alive'), { birth:new Set([3,4,5]), survive:new Set([7]), checkState:1, targetState:1, decayTo:0 })
+      ];
+    } else if(key === 'embers'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#f5f0e6', 'Spark'), { birth:new Set([2]), survive:new Set([3,4,5]), checkState:1, targetState:1, decayTo:2 }),
+        Object.assign(defaultState(2, '#e0a836', 'Ember'), { birth:new Set(), survive:new Set(), checkState:2, targetState:2, decayTo:3 }),
+        Object.assign(defaultState(3, '#c96a5a', 'Ash'), { birth:new Set(), survive:new Set(), checkState:3, targetState:3, decayTo:4 }),
+        Object.assign(defaultState(4, '#4a6fa5', 'Smoke'), { birth:new Set(), survive:new Set(), checkState:4, targetState:4, decayTo:0 })
+      ];
+    } else if(key === 'starwars'){
+      states = [
+        { id:0, color:'#0a0e14', name:'Dead' },
+        Object.assign(defaultState(1, '#5fb0e0', 'Alive'), { birth:new Set([2]), survive:new Set([3,4,5]), checkState:1, targetState:1, decayTo:2 }),
+        Object.assign(defaultState(2, '#e0a836', 'Dying 1'), { birth:new Set(), survive:new Set(), checkState:2, targetState:2, decayTo:3 }),
+        Object.assign(defaultState(3, '#c96a5a', 'Dying 2'), { birth:new Set(), survive:new Set(), checkState:3, targetState:3, decayTo:0 })
+      ];
+    }
+    document.getElementById('stateCount').value = states.length;
+    if(brushState >= states.length) brushState = states.length - 1;
+    renderStateEditor();
+    if(grid){
+      grid.fill(0);
+      genCount = 0;
+      resetCellAge();
+      resetStability();
+      updateStats();
+      resetHistory();
+      draw();
+    }
+  }
+
+  // ---------------- Grid management ----------------
+  function makeGrid(w, h){ return new Uint8Array(w*h); }
+
+  function resetCellAge(){
+    cellAge = new Uint16Array(gridW*gridH);
+    nextCellAge = new Uint16Array(gridW*gridH);
+  }
+
+  function resetStability(){
+    hashHistory = new Map();
+    hashOrder = [];
+    stabilityInfo = null;
+    updateStabilityBadge();
+  }
+
+  function applyGridSize(){
+    gridW = clamp(parseInt(document.getElementById('gridW').value)||80, 4, 220);
+    gridH = clamp(parseInt(document.getElementById('gridH').value)||60, 4, 220);
+    cellSize = clamp(parseInt(document.getElementById('cellSize').value)||9, 2, 40);
+    document.getElementById('gridW').value = gridW;
+    document.getElementById('gridH').value = gridH;
+    document.getElementById('cellSize').value = cellSize;
+
+    grid = makeGrid(gridW, gridH);
+    nextGrid = makeGrid(gridW, gridH);
+    resetCellAge();
+    canvas.width = gridW * cellSize;
+    canvas.height = gridH * cellSize;
+    genCount = 0;
+    resetStability();
+    updateStats();
+    resetHistory();
+    draw();
+  }
+
+  function clearGrid(){
+    grid.fill(0);
+    resetCellAge();
+    genCount = 0;
+    resetStability();
+    updateStats();
+    resetHistory();
+    draw();
+  }
+
+  function randomizeGrid(){
+    const density = parseInt(document.getElementById('density').value) / 100;
+    const nStates = states.length;
+    for(let i=0;i<grid.length;i++){
+      grid[i] = Math.random() < density ? 1 + Math.floor(Math.random() * (nStates - 1)) : 0;
+    }
+    resetCellAge();
+    genCount = 0;
+    resetStability();
+    updateStats();
+    resetHistory();
+    draw();
+  }
+
+  // ---------------- State-Aware Neighborhood Checking ----------------
+  function countNeighbors(x, y, targetState){
+    let c = 0;
+    for(let dy=-1; dy<=1; dy++){
+      for(let dx=-1; dx<=1; dx++){
+        if(dx===0 && dy===0) continue;
+        let nx = x+dx, ny = y+dy;
+        if(wrap){
+          nx = (nx + gridW) % gridW;
+          ny = (ny + gridH) % gridH;
+        } else {
+          if(nx<0||ny<0||nx>=gridW||ny>=gridH) continue;
+        }
+        if(grid[ny*gridW+nx] === targetState) c++;
+      }
+    }
+    return c;
+  }
+
+  function hashGrid(g){
+    let h = 2166136261;
+    for(let i=0;i<g.length;i++){
+      h ^= g[i];
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function checkStability(){
+    const h = hashGrid(grid);
+    if(hashHistory.has(h)){
+      const entry = hashHistory.get(h);
+      const period = genCount - entry.lastGen;
+      const cycleStart = genCount - period;
+
+      if(!stabilityInfo || stabilityInfo.period !== period){
+        stabilityInfo = { sinceGen: cycleStart, period };
+      } else {
+        stabilityInfo.sinceGen = Math.min(stabilityInfo.sinceGen, cycleStart);
+      }
+
+      entry.lastGen = genCount;
+    } else {
+      hashHistory.set(h, { firstGen: genCount, lastGen: genCount });
+      hashOrder.push(h);
+    }
+    if(hashOrder.length > HASH_WINDOW){
+      const old = hashOrder.shift();
+      if(hashHistory.has(old)) hashHistory.delete(old);
+    }
+    updateStabilityBadge();
+  }
+
+  function updateStabilityBadge(){
+    const badge = document.getElementById('stabilityBadge');
+    const text = document.getElementById('stabilityText');
+    if(!stabilityInfo){
+      badge.classList.remove('show','stable','oscillating');
+      return;
+    }
+    badge.classList.add('show');
+    if(stabilityInfo.period <= 1){
+      badge.classList.add('stable');
+      badge.classList.remove('oscillating');
+      text.textContent = 'Stable since gen ' + stabilityInfo.sinceGen;
+    } else {
+      badge.classList.add('oscillating');
+      badge.classList.remove('stable');
+      text.textContent = 'Oscillating (period ' + stabilityInfo.period + ') since gen ' + stabilityInfo.sinceGen;
+    }
+  }
+
+  function step(){
+    for(let y=0; y<gridH; y++){
+      for(let x=0; x<gridW; x++){
+        const idx = y*gridW+x;
+        const cur = grid[idx];
+        let next = 0;
+
+        if(cur === 0){
+          // Birth logic from empty space
+          next = 0;
+          for(let s=1; s<states.length; s++){
+            const targetCheck = states[s].checkState !== undefined ? states[s].checkState : s;
+            const n = countNeighbors(x, y, targetCheck);
+            if(states[s].birth.has(n)){ next = s; break; }
+          }
+        } else {
+          // Active State Logic
+          const st = states[cur];
+          const targetCheck = st.checkState !== undefined ? st.checkState : cur;
+          const n = countNeighbors(x, y, targetCheck);
+
+          if(st.survive.has(n)){
+            next = st.targetState !== undefined ? st.targetState : cur;
+          } else {
+            next = st.decayTo !== undefined ? st.decayTo : 0;
+          }
+        }
+        nextGrid[idx] = next;
+        nextCellAge[idx] = (next === cur) ? Math.min(cellAge[idx]+1, 6000) : 0;
+      }
+    }
+    let tmp = grid; grid = nextGrid; nextGrid = tmp;
+    tmp = cellAge; cellAge = nextCellAge; nextCellAge = tmp;
+    genCount++;
+
+    checkStability();
+    maybeAutoMutate();
+
+    const counts = computeCounts();
+    updateLiveStats(counts);
+    recordHistoryPoint(counts);
+    draw();
+  }
+
+  // ---------------- Rendering ----------------
+  function ageToColor(age){
+    const t = Math.min(age / 45, 1);
+    const hue = 52 - 52*t;
+    const light = 58 - 24*t;
+    return `hsl(${hue}, 88%, ${light}%)`;
+  }
+
+  function draw(){
+    ctx.fillStyle = states[0].color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if(heatmapMode){
+      for(let y=0; y<gridH; y++){
+        for(let x=0; x<gridW; x++){
+          const idx = y*gridW+x;
+          if(grid[idx] !== 0){
+            ctx.fillStyle = ageToColor(cellAge[idx]);
+            ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+          }
+        }
+      }
+    } else {
+      for(let s=1; s<states.length; s++){
+        ctx.fillStyle = states[s].color;
+        for(let y=0; y<gridH; y++){
+          for(let x=0; x<gridW; x++){
+            if(grid[y*gridW+x] === s){
+              ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ---------------- Stats / population + entropy charts ----------------
+  function computeCounts(){
+    const counts = new Array(states.length).fill(0);
+    for(let i=0;i<grid.length;i++) counts[grid[i]]++;
+    return counts;
+  }
+
+  function computeEntropy(counts, total){
+    let hEnt = 0;
+    for(let i=0;i<counts.length;i++){
+      const c = counts[i];
+      if(c === 0) continue;
+      const p = c/total;
+      hEnt -= p * Math.log2(p);
+    }
+    return hEnt;
+  }
+
+  function updateStats(){
+    const counts = computeCounts();
+    updateLiveStats(counts);
+  }
+
+  function updateLiveStats(counts){
+    document.getElementById('genCount').textContent = genCount;
+    const total = grid.length;
+    const alive = total - counts[0];
+    document.getElementById('popStat').textContent = 'Population ' + alive;
+    updateLegend(counts, total);
+    const ent = computeEntropy(counts, total);
+    document.getElementById('entropyVal').textContent = ent.toFixed(2) + ' bits';
+  }
+
+  function updateLegend(counts, total){
+    const strip = document.getElementById('legendStrip');
+    strip.innerHTML = '';
+    for(let s=1; s<states.length; s++){
+      const st = states[s];
+      const c = counts[s] || 0;
+      const pct = total ? ((c/total)*100).toFixed(1) : '0.0';
+      const chip = document.createElement('div');
+      chip.className = 'legend-chip';
+      chip.innerHTML = `<span class="dot" style="background:${st.color}"></span>${st.id} · ${st.name} <b>${c}</b><span class="pct">${pct}%</span>`;
+      strip.appendChild(chip);
+    }
+  }
+
+  function resetHistory(){
+    const counts = computeCounts();
+    const total = grid.length;
+    history = {
+      gens: [genCount],
+      series: states.map((st, s) => [counts[s] || 0]),
+      entropy: [computeEntropy(counts, total)]
+    };
+    drawChart();
+    drawEntropyChart();
+    drawAllSparklines();
+  }
+
+  function recordHistoryPoint(counts){
+    history.gens.push(genCount);
+    for(let s=0; s<states.length; s++){
+      if(!history.series[s]) history.series[s] = [];
+      history.series[s].push(counts[s] || 0);
+    }
+    history.entropy.push(computeEntropy(counts, grid.length));
+    if(history.gens.length > MAX_HISTORY){
+      history.gens.shift();
+      for(let s=0; s<history.series.length; s++) history.series[s].shift();
+      history.entropy.shift();
+    }
+    drawChart();
+    drawEntropyChart();
+    drawAllSparklines();
+  }
+
+  function resizeChartCanvas(){
+    const dpr = window.devicePixelRatio || 1;
+    [ [chartCanvas, chartCtx], [entropyCanvas, entropyCtx] ].forEach(([c, cx])=>{
+      const rect = c.getBoundingClientRect();
+      if(rect.width === 0 || rect.height === 0) return;
+      c.width = Math.round(rect.width * dpr);
+      c.height = Math.round(rect.height * dpr);
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    });
+    drawChart();
+    drawEntropyChart();
+  }
+
+  function drawChart(){
+    if(!chartVisible) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = chartCanvas.width / dpr;
+    const h = chartCanvas.height / dpr;
+    chartCtx.clearRect(0, 0, w, h);
+    if(history.gens.length < 2){ document.getElementById('chartRangeLabel').textContent = ''; return; }
+
+    const padL = 4, padR = 4, padT = 6, padB = 4;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    let maxVal = 1;
+    for(let s=1; s<history.series.length; s++){
+      for(const v of history.series[s]) if(v > maxVal) maxVal = v;
+    }
+    maxVal = Math.ceil(maxVal * 1.08);
+
+    chartCtx.strokeStyle = 'rgba(255,255,255,0.05)';
+    chartCtx.lineWidth = 1;
+    for(let g=1; g<=3; g++){
+      const y = padT + plotH * (g/4);
+      chartCtx.beginPath();
+      chartCtx.moveTo(padL, y);
+      chartCtx.lineTo(padL+plotW, y);
+      chartCtx.stroke();
+    }
+
+    const n = history.gens.length;
+    const xStep = n > 1 ? plotW / (n-1) : 0;
+
+    for(let s=1; s<history.series.length; s++){
+      const series = history.series[s];
+      if(!series || !states[s]) continue;
+      chartCtx.strokeStyle = states[s].color;
+      chartCtx.lineWidth = 1.6;
+      chartCtx.beginPath();
+      for(let i=0; i<series.length; i++){
+        const x = padL + i * xStep;
+        const y = padT + plotH - (series[i] / maxVal) * plotH;
+        if(i === 0) chartCtx.moveTo(x, y); else chartCtx.lineTo(x, y);
+      }
+      chartCtx.stroke();
+    }
+
+    document.getElementById('chartRangeLabel').textContent =
+      'gen ' + history.gens[0] + '–' + history.gens[n-1] + ' · max ' + maxVal;
+  }
+
+  function drawEntropyChart(){
+    if(!chartVisible) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = entropyCanvas.width / dpr;
+    const h = entropyCanvas.height / dpr;
+    entropyCtx.clearRect(0, 0, w, h);
+    if(history.entropy.length < 2) return;
+
+    const maxH = states.length > 1 ? Math.log2(states.length) : 1;
+    const n = history.entropy.length;
+    const xStep = n > 1 ? w / (n-1) : 0;
+
+    entropyCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+    entropyCtx.beginPath();
+    entropyCtx.moveTo(0, 2);
+    entropyCtx.lineTo(w, 2);
+    entropyCtx.stroke();
+
+    entropyCtx.strokeStyle = '#b586d6';
+    entropyCtx.lineWidth = 1.5;
+    entropyCtx.beginPath();
+    for(let i=0;i<n;i++){
+      const x = i*xStep;
+      const y = h - (maxH ? (history.entropy[i]/maxH)*h : 0);
+      if(i===0) entropyCtx.moveTo(x,y); else entropyCtx.lineTo(x,y);
+    }
+    entropyCtx.stroke();
+  }
+
+  function drawAllSparklines(){
+    for(let s=1; s<states.length; s++){
+      const c = document.getElementById('spark-' + s);
+      if(!c) continue;
+      const series = history.series[s];
+      if(!series) continue;
+      const sctx = c.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = c.getBoundingClientRect();
+      if(rect.width === 0) continue;
+      c.width = Math.round(rect.width*dpr);
+      c.height = Math.round(rect.height*dpr);
+      sctx.setTransform(dpr,0,0,dpr,0,0);
+      const w = rect.width, h = rect.height;
+      sctx.clearRect(0,0,w,h);
+      const slice = series.slice(-80);
+      const maxV = Math.max(1, ...slice);
+      const n = slice.length;
+      if(n < 2) continue;
+      const xStep = w/(n-1);
+      sctx.strokeStyle = states[s].color;
+      sctx.lineWidth = 1.4;
+      sctx.beginPath();
+      for(let i=0;i<n;i++){
+        const x = i*xStep;
+        const y = h - (slice[i]/maxV)*h*0.9 - 1;
+        if(i===0) sctx.moveTo(x,y); else sctx.lineTo(x,y);
+      }
+      sctx.stroke();
+    }
+  }
+
+  // ---------------- Mutations ----------------
+  function maybeAutoMutate(){
+    if(!document.getElementById('autoMutate').checked) return;
+    const interval = clamp(parseInt(document.getElementById('mutateInterval').value)||50, 1, 5000);
+    if(genCount % interval === 0) mutateRules(true);
+  }
+
+  function mutateRules(fromAuto){
+    deselectPreset();
+    const rate = clamp(parseInt(document.getElementById('mutationRate').value)||8, 1, 100) / 100;
+    let flips = 0;
+    for(let s=1; s<states.length; s++){
+      const st = states[s];
+      for(let n=0; n<=8; n++){
+        if(Math.random() < rate){ st.birth.has(n) ? st.birth.delete(n) : st.birth.add(n); flips++; }
+        if(Math.random() < rate){ st.survive.has(n) ? st.survive.delete(n) : st.survive.add(n); flips++; }
+      }
+      if(Math.random() < rate*0.4){ st.decayTo = Math.floor(Math.random()*states.length); flips++; }
+    }
+    renderStateEditor();
+    document.getElementById('mutationStatus').textContent =
+      (fromAuto ? 'Auto-' : '') + 'Mutated ' + flips + ' rule bit(s) at generation ' + genCount + '.';
+  }
+
+  // ---------------- Playback loop ----------------
+  function loop(ts){
+    if(!running) return;
+    const speed = parseInt(document.getElementById('speed').value);
+    const interval = 1000 / speed;
+    if(ts - lastStepTime >= interval){
+      lastStepTime = ts;
+      step();
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function setRunning(v){
+    running = v;
+    const btn = document.getElementById('playBtn');
+    const miniBtn = document.getElementById('miniPlay');
+    const status = document.getElementById('statusLabel');
+    if(running){
+      btn.textContent = '⏸ Pause';
+      btn.classList.remove('primary');
+      miniBtn.textContent = '⏸';
+      status.textContent = 'Running';
+      lastStepTime = performance.now();
+      rafId = requestAnimationFrame(loop);
+    } else {
+      btn.textContent = '▶ Run';
+      btn.classList.add('primary');
+      miniBtn.textContent = '▶';
+      status.textContent = 'Paused';
+      if(rafId) cancelAnimationFrame(rafId);
+    }
+  }
+
+  // ---------------- State editor UI ----------------
+  function renderStateEditor(){
+    const container = document.getElementById('stateList');
+    container.innerHTML = '';
+
+    const bgCard = document.createElement('div');
+    bgCard.className = 'state-card';
+    bgCard.innerHTML = `
+      <div class="state-head">
+        <input type="color" class="swatch" value="${states[0].color}" data-role="bgcolor">
+        <input type="text" value="${states[0].name}" data-role="bgname">
+        <span class="state-id-badge">0</span>
+      </div>
+      <div class="hint">Background / empty state — no birth or survive rules.</div>
+    `;
+    container.appendChild(bgCard);
+    bgCard.querySelector('[data-role="bgcolor"]').addEventListener('input', e=>{ deselectPreset(); states[0].color = e.target.value; draw(); });
+    bgCard.querySelector('[data-role="bgname"]').addEventListener('input', e=>{ deselectPreset(); states[0].name = e.target.value; });
+
+    for(let s=1; s<states.length; s++){
+      const st = states[s];
+      const card = document.createElement('div');
+      card.className = 'state-card' + (brushState===s ? ' selected-brush' : '');
+      card.dataset.state = s;
+
+      const decayOptions = states.map((o,i)=>`<option value="${i}" ${st.decayTo===i?'selected':''}>${i} · ${o.name}</option>`).join('');
+      const checkOptions = states.map((o,i)=>`<option value="${i}" ${(st.checkState!==undefined?st.checkState:s)===i?'selected':''}>${i} · ${o.name}</option>`).join('');
+
+      card.innerHTML = `
+        <div class="state-head">
+          <input type="color" class="swatch" value="${st.color}" data-role="color">
+          <input type="text" value="${st.name}" data-role="name">
+          <span class="state-id-badge">${s}</span>
+          <button class="paint-btn small">paint</button>
+        </div>
+        <div class="rule-line" data-role="birth"><span>Birth</span><div class="count-boxes"></div></div>
+        <div class="rule-line" data-role="survive"><span>Survive</span><div class="count-boxes"></div></div>
+        <div class="decay-row"><span>check state →</span><select data-role="checkstate">${checkOptions}</select></div>
+        <div class="decay-row"><span>decay →</span><select data-role="decay">${decayOptions}</select></div>
+        <div class="spark-row"><span>pop.</span><canvas class="spark" id="spark-${s}"></canvas></div>
+      `;
+      container.appendChild(card);
+
+      card.querySelector('[data-role="color"]').addEventListener('input', e=>{ deselectPreset(); st.color = e.target.value; draw(); renderStateEditor(); });
+      card.querySelector('[data-role="name"]').addEventListener('input', e=>{ deselectPreset(); st.name = e.target.value; });
+      card.querySelector('.paint-btn').addEventListener('click', ()=>{ brushState = s; renderStateEditor(); updateBrushIndicator(); });
+      card.querySelector('[data-role="checkstate"]').addEventListener('change', e=>{ deselectPreset(); st.checkState = parseInt(e.target.value); updateRuleNotation(); });
+      card.querySelector('[data-role="decay"]').addEventListener('change', e=>{ deselectPreset(); st.decayTo = parseInt(e.target.value); updateRuleNotation(); });
+
+      buildCountBoxes(card.querySelector('[data-role="birth"] .count-boxes'), st.birth);
+      buildCountBoxes(card.querySelector('[data-role="survive"] .count-boxes'), st.survive);
+    }
+    updateBrushIndicator();
+    drawAllSparklines();
+    updateRuleNotation();
+  }
+
+  function buildCountBoxes(container, set){
+    for(let n=0; n<=8; n++){
+      const box = document.createElement('div');
+      box.className = 'count-box' + (set.has(n) ? ' on' : '');
+      box.textContent = n;
+      box.addEventListener('click', ()=>{
+        deselectPreset();
+        if(set.has(n)) set.delete(n); else set.add(n);
+        box.classList.toggle('on');
+        updateRuleNotation();
+      });
+      container.appendChild(box);
+    }
+  }
+
+  // ---------------- Rule notation ----------------
+  function ruleDigits(set){
+    return [...set].sort((a,b)=>a-b).join('');
+  }
+  function updateRuleNotation(){
+    const el = document.getElementById('ruleNotation');
+    if(!el || !states.length) return;
+    if(states.length === 2){
+      const st = states[1];
+      el.textContent = 'B' + ruleDigits(st.birth) + '/S' + ruleDigits(st.survive);
+    } else {
+      const parts = states.slice(1).map(st=>{
+        let s = st.id + ':B' + ruleDigits(st.birth) + '/S' + ruleDigits(st.survive);
+        if(st.checkState !== undefined && st.checkState !== st.id) s += '(chk:' + st.checkState + ')';
+        if(st.decayTo !== st.id) s += '→' + st.decayTo;
+        return s;
+      });
+      el.textContent = parts.join('  ') + '  /C' + states.length;
+    }
+  }
+
+  function updateBrushIndicator(){
+    const dot = document.getElementById('brushDot');
+    const label = document.getElementById('brushLabel');
+    const st = states[brushState] || states[1];
+    dot.style.background = st.color;
+    label.textContent = 'Painting: ' + st.id + ' · ' + st.name;
+  }
+
+  function applyStateCount(n){
+    n = clamp(n, 2, 10);
+    if(n === states.length) return;
+    deselectPreset();
+    if(n > states.length){
+      const palette = ['#e0a836','#c96a5a','#5fb0e0','#8fbf6a','#b586d6','#e07fb0','#6adfc6','#d6c25a','#8a97ab'];
+      while(states.length < n){
+        const id = states.length;
+        states.push(defaultState(id, palette[(id-1)%palette.length], 'State ' + id));
+      }
+    } else {
+      states = states.slice(0, n);
+      if(brushState >= n) brushState = n-1;
+      if(grid) for(let i=0;i<grid.length;i++) if(grid[i] >= n) grid[i] = 0;
+    }
+    document.getElementById('stateCount').value = states.length;
+    renderStateEditor();
+    if(grid){ draw(); resetStability(); updateStats(); resetHistory(); }
+  }
+
+  // ---------------- Rule export / import ----------------
+  function exportRules(){
+    const data = {
+      version: 1,
+      wrap,
+      states: states.map(st => st.id===0
+        ? { id:0, color:st.color, name:st.name }
+        : { id:st.id, color:st.color, name:st.name, birth:[...st.birth], survive:[...st.survive], decayTo:st.decayTo, checkState:st.checkState, targetState:st.targetState })
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'ca-rules.json'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importRulesFile(file){
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if(!data.states || !Array.isArray(data.states) || data.states.length < 2) throw new Error('missing "states" array');
+        deselectPreset();
+        const imported = data.states.slice(0,10).map((s,i) => i===0
+          ? { id:0, color: s.color || '#0a0e14', name: s.name || 'Dead' }
+          : { id:i, color: s.color || '#e0a836', name: s.name || ('State '+i),
+              birth: new Set(s.birth||[]), survive: new Set(s.survive||[]), decayTo: clamp(s.decayTo||0, 0, data.states.length-1), checkState: s.checkState, targetState: s.targetState });
+        states = imported;
+        if(typeof data.wrap === 'boolean'){ wrap = data.wrap; document.getElementById('wrapEdges').checked = wrap; }
+        document.getElementById('stateCount').value = states.length;
+        brushState = Math.min(brushState, states.length-1);
+        renderStateEditor();
+        if(grid){
+          grid.fill(0); genCount = 0;
+          resetCellAge(); resetStability();
+          updateStats(); resetHistory(); draw();
+        }
+      } catch(err){
+        alert('Could not import rules: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------------- Surprise me ----------------
+  function surpriseMe(){
+    deselectPreset();
+    const n = 2 + Math.floor(Math.random()*5);
+    const palette = ['#e0a836','#c96a5a','#5fb0e0','#8fbf6a','#b586d6','#e07fb0','#6adfc6','#d6c25a','#8a97ab'];
+    const bgColors = ['#0a0e14','#05070a','#0b0f1a','#12060a'];
+    states = [{ id:0, color: bgColors[Math.floor(Math.random()*bgColors.length)], name:'Empty' }];
+    for(let s=1; s<n; s++){
+      const st = defaultState(s, palette[(s-1)%palette.length], 'State ' + s);
+      for(let c=0; c<=8; c++){
+        if(Math.random() < 0.22) st.birth.add(c);
+        if(Math.random() < 0.32) st.survive.add(c);
+      }
+      st.decayTo = Math.random() < 0.55 ? 0 : Math.floor(Math.random()*n);
+      st.checkState = Math.floor(Math.random()*n);
+      states.push(st);
+    }
+    document.getElementById('stateCount').value = n;
+    brushState = 1;
+    renderStateEditor();
+    document.getElementById('density').value = 15 + Math.floor(Math.random()*40);
+    if(grid) randomizeGrid();
+  }
+
+  // ---------------- Video export ----------------
+  function exportVideo(){
+    if(!canvas.captureStream || typeof MediaRecorder === 'undefined'){
+      document.getElementById('videoStatus').textContent = 'Video export not supported in this browser.';
+      return;
+    }
+    const duration = clamp(parseFloat(document.getElementById('videoDuration').value)||6, 1, 60);
+    const status = document.getElementById('videoStatus');
+    const recordBtn = document.getElementById('recordBtn');
+
+    let mime = 'video/webm';
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported){
+      if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mime = 'video/webm;codecs=vp9';
+      else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) mime = 'video/webm;codecs=vp8';
+    }
+
+    const stream = canvas.captureStream(30);
+    let recorder;
+    try { recorder = new MediaRecorder(stream, {mimeType: mime}); }
+    catch(e){ status.textContent = 'Recording failed to start.'; return; }
+
+    const chunks = [];
+    recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, {type:'video/webm'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'cellular-automata.webm'; a.click();
+      URL.revokeObjectURL(url);
+      status.textContent = 'Saved cellular-automata.webm (' + duration + 's).';
+      recordBtn.disabled = false;
+    };
+
+    const wasRunning = running;
+    if(!running) setRunning(true);
+    recorder.start();
+    recordBtn.disabled = true;
+
+    let remaining = duration;
+    status.textContent = 'Recording… ' + remaining + 's left';
+    const countdown = setInterval(()=>{
+      remaining--;
+      if(remaining > 0) status.textContent = 'Recording… ' + remaining + 's left';
+      else clearInterval(countdown);
+    }, 1000);
+
+    setTimeout(() => {
+      recorder.stop();
+      if(!wasRunning) setRunning(false);
+    }, duration*1000);
+  }
+
+  // ---------------- Presentation mode ----------------
+  function togglePresentation(forceOff){
+    presentationMode = forceOff ? false : !presentationMode;
+    document.body.classList.toggle('presentation', presentationMode);
+    if(presentationMode){
+      if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+    } else {
+      if(document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+    }
+    setTimeout(resizeChartCanvas, 60);
+  }
+  document.addEventListener('fullscreenchange', ()=>{
+    if(!document.fullscreenElement && presentationMode) togglePresentation(true);
+  });
+
+  // ---------------- Painting on canvas ----------------
+  let painting = false;
+  let eraseMode = false;
+
+  function paintAt(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((clientX - rect.left) / (rect.width / gridW));
+    const y = Math.floor((clientY - rect.top) / (rect.height / gridH));
+    if(x<0||y<0||x>=gridW||y>=gridH) return;
+    const idx = y*gridW+x;
+    grid[idx] = eraseMode ? 0 : brushState;
+    cellAge[idx] = 0;
+    draw();
+  }
+
+  canvas.addEventListener('mousedown', e=>{
+    painting = true;
+    eraseMode = (e.button === 2) || e.shiftKey;
+    paintAt(e.clientX, e.clientY);
+  });
+  window.addEventListener('mouseup', ()=>{ if(painting){ painting=false; resetStability(); updateStats(); } });
+  canvas.addEventListener('mousemove', e=>{ if(painting) paintAt(e.clientX, e.clientY); });
+  canvas.addEventListener('contextmenu', e=> e.preventDefault());
+
+  canvas.addEventListener('touchstart', e=>{
+    painting = true;
+    const t = e.touches[0];
+    paintAt(t.clientX, t.clientY);
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchmove', e=>{
+    if(painting){ const t = e.touches[0]; paintAt(t.clientX, t.clientY); }
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchend', ()=>{ if(painting){ painting=false; resetStability(); updateStats(); } });
+
+  // ---------------- Wiring ----------------
+  document.getElementById('applyGrid').addEventListener('click', applyGridSize);
+  document.getElementById('wrapEdges').addEventListener('change', e=>{ wrap = e.target.checked; resetStability(); });
+  document.getElementById('clearBtn').addEventListener('click', clearGrid);
+  document.getElementById('randomizeBtn').addEventListener('click', randomizeGrid);
+  document.getElementById('stateCount').addEventListener('change', e=>{ applyStateCount(parseInt(e.target.value)||2); });
+  document.getElementById('presetSelect').addEventListener('change', e=>{ loadPreset(e.target.value); });
+  document.getElementById('surpriseBtn').addEventListener('click', surpriseMe);
+
+  document.getElementById('playBtn').addEventListener('click', ()=> setRunning(!running));
+  document.getElementById('stepBtn').addEventListener('click', ()=>{ if(!running) step(); });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{ setRunning(false); clearGrid(); });
+  document.getElementById('speed').addEventListener('input', e=>{ document.getElementById('speedLabel').textContent = e.target.value + ' gen/s'; });
+
+  document.getElementById('mutationRate').addEventListener('input', e=>{ document.getElementById('mutationRateLabel').textContent = e.target.value + '%'; });
+  document.getElementById('mutateNowBtn').addEventListener('click', ()=> mutateRules(false));
+
+  document.getElementById('heatmapToggle').addEventListener('change', e=>{ heatmapMode = e.target.checked; draw(); });
+  document.getElementById('presentBtn').addEventListener('click', ()=> togglePresentation(false));
+  document.getElementById('recordBtn').addEventListener('click', exportVideo);
+  document.getElementById('exportRulesBtn').addEventListener('click', exportRules);
+  document.getElementById('importRulesBtn').addEventListener('click', ()=> document.getElementById('importRulesFile').click());
+  document.getElementById('importRulesFile').addEventListener('change', e=>{
+    if(e.target.files && e.target.files[0]) importRulesFile(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  document.getElementById('chartToggle').addEventListener('click', e=>{
+    chartVisible = !chartVisible;
+    document.getElementById('chartPanel').classList.toggle('collapsed', !chartVisible);
+    e.target.textContent = chartVisible ? 'hide' : 'show';
+    if(chartVisible) resizeChartCanvas();
+  });
+  window.addEventListener('resize', resizeChartCanvas);
+
+  document.getElementById('miniPlay').addEventListener('click', ()=> setRunning(!running));
+  document.getElementById('miniStep').addEventListener('click', ()=>{ if(!running) step(); });
+  document.getElementById('miniExit').addEventListener('click', ()=> togglePresentation(true));
+
+  document.addEventListener('keydown', e=>{
+    if(e.code === 'Space'){ e.preventDefault(); setRunning(!running); }
+    if(e.key === 's' || e.key === 'S'){ if(!running) step(); }
+    if(e.key === 'c' || e.key === 'C'){ if(e.ctrlKey || e.metaKey) return; clearGrid(); }
+    if(e.key === 'Escape' && presentationMode){ togglePresentation(true); }
+  });
+
+  // ---------------- Init ----------------
+  wrap = document.getElementById('wrapEdges').checked;
+  document.getElementById('presetSelect').value = 'life';
+  loadPreset('life');
+  applyGridSize();
+  updateBrushIndicator();
+  resizeChartCanvas();
+
+})();
+</script>
+
+</body>
+</html>
